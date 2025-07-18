@@ -32,7 +32,7 @@ policies, either expressed or implied.
 
 When using this code in a scientific project, please cite one or all of the
 following papers:
-*  Daniel Ruijters and Philippe Thévenaz,
+*  Daniel Ruijters and Philippe Thï¿½venaz,
    GPU Prefilter for Accurate Cubic B-Spline Interpolation, 
    The Computer Journal, vol. 55, no. 1, pp. 15-20, January 2012.
    http://dannyruijters.nl/docs/cudaPrefilter3.pdf
@@ -42,7 +42,7 @@ following papers:
 \*--------------------------------------------------------------------------*/
 
 #include <stdio.h>
-#include <cutil.h>
+#include <helper_cuda.h>
 #include <memcpy.cu>
 #include <cubicPrefilter2D.cu>
 #include <cubicPrefilter3D.cu>
@@ -50,31 +50,36 @@ following papers:
 #include <cubicTex2D.cu>
 #include <cubicTex3D.cu>
 
-texture<float, 1, cudaReadModeElementType> coeffs1D;  //1D texture
-texture<float, 2, cudaReadModeElementType> coeffs2D;  //2D texture
-texture<float, 3, cudaReadModeElementType> coeffs3D;  //3D texture
-float* input = NULL;
-float* outputCuda = NULL;
-cudaArray* coeffArray1D = 0;
-cudaArray* coeffArray2D = 0;
-cudaArray* coeffArray3D = 0;
+extern "C" void convert_to_device_array(
+	const short* h_volume,
+	cudaArray_t cuda_array,
+	cudaExtent extent);
+
+cudaTextureObject_t coeffs1D{ 0 };  //1D texture
+cudaTextureObject_t coeffs2D{ 0 };  //2D texture
+cudaTextureObject_t coeffs3D{ 0 };  //3D texture
+float* input{ nullptr };
+float* outputCuda{ nullptr };
+cudaArray* coeffArray1D{ nullptr };
+cudaArray* coeffArray2D{ nullptr };
+cudaArray* coeffArray3D{ nullptr };
 
 
-__global__ void kernel1D(float* output, float rSize)
-{
-	uint x = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
-	output[x] = cubicTex1D(coeffs1D, (float)x+0.5f);
-}
+// __global__ void kernel1D(float* output, cudaTextureObject_t texObj, float rSize)
+// {
+// 	uint x = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
+// 	output[x] = cubicTex1D(texObj, (float)x+0.5f);
+// }
 
-__global__ void kernel2D(float* output, int2 extent)
-{
-	uint x = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
-	uint y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
-	float2 coord = make_float2(x+0.5f, y+0.5f);
+// __global__ void kernel2D(float* output, cudaTextureObject_t texObj, int2 extent)
+// {
+// 	uint x = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
+// 	uint y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
+// 	float2 coord = make_float2(x+0.5f, y+0.5f);
 
-	uint i = y * extent.x + x;
-	output[i] = cubicTex2D(coeffs2D, coord);
-}
+// 	uint i = y * extent.x + x;
+// 	output[i] = cubicTex2D(coeffs2D, coord);
+// }
 
 __global__ void kernel3D(float* output, int3 extent, uint z)
 {
@@ -105,27 +110,27 @@ extern "C" void test(uint3 volumeSize)
 	float* output = new float[size];
 
 	// call CUDA kernel
-	const dim3 blockSize1(min(PowTwoDivider(volumeSize.x), 64), 1);
-	const dim3 gridSize1(volumeSize.x / blockSize1.x, 1);
-	kernel1D<<<gridSize1, blockSize1>>>(outputCuda, 1.0f/volumeSize.x);
-	CUT_CHECK_ERROR("kernel failed");
-	CUDA_SAFE_CALL(cudaMemcpy(output, outputCuda, volumeSize.x * sizeof(float), cudaMemcpyDeviceToHost));
-	printf("1D mean absolute error: %f\n", Diff(input, output, volumeSize.x));
+	// const dim3 blockSize1(min(PowTwoDivider(volumeSize.x), 64), 1);
+	// const dim3 gridSize1(volumeSize.x / blockSize1.x, 1);
+	// kernel1D<<<gridSize1, blockSize1>>>(outputCuda, 1.0f/volumeSize.x);
+	// CUT_CHECK_ERROR("kernel failed");
+	// checkCudaErrors(cudaMemcpy(output, outputCuda, volumeSize.x * sizeof(float), cudaMemcpyDeviceToHost));
+	// printf("1D mean absolute error: %f\n", Diff(input, output, volumeSize.x));
 	
 	const dim3 blockSize2(min(PowTwoDivider(volumeSize.x), 16), min(PowTwoDivider(volumeSize.y), 16));
 	const dim3 gridSize2(volumeSize.x / blockSize2.x, volumeSize.y / blockSize2.y);
-	kernel2D<<<gridSize2, blockSize2>>>(outputCuda, make_int2(volumeSize.x, volumeSize.y));
-	CUT_CHECK_ERROR("kernel failed");
-	CUDA_SAFE_CALL(cudaMemcpy(output, outputCuda, size * sizeof(float), cudaMemcpyDeviceToHost));
-	printf("2D mean absolute error: %f\n", Diff(input, output, size));
+	// kernel2D<<<gridSize2, blockSize2>>>(outputCuda, make_int2(volumeSize.x, volumeSize.y));
+	// CUT_CHECK_ERROR("kernel failed");
+	// checkCudaErrors(cudaMemcpy(output, outputCuda, size * sizeof(float), cudaMemcpyDeviceToHost));
+	// printf("2D mean absolute error: %f\n", Diff(input, output, size));
 	
 	double sum = 0.0;
 	const int3 volumeExtent = make_int3(volumeSize.x, volumeSize.y, volumeSize.z);
 	for (uint z=0; z < volumeSize.z; z++)
 	{
 		kernel3D<<<gridSize2, blockSize2>>>(outputCuda, volumeExtent, z);
-		CUT_CHECK_ERROR("kernel failed");
-		CUDA_SAFE_CALL(cudaMemcpy(output, outputCuda, size * sizeof(float), cudaMemcpyDeviceToHost));
+		// CUT_CHECK_ERROR("kernel failed");
+		checkCudaErrors(cudaMemcpy(output, outputCuda, size * sizeof(float), cudaMemcpyDeviceToHost));
 		sum += Diff(input + z * size, output, size);
 	}
 	
@@ -147,51 +152,53 @@ extern "C" void initCuda(uint3 volumeSize)
 	}
 
 	// initialize CUDA output array
-	CUDA_SAFE_CALL(cudaMalloc((void**)&outputCuda, volumeSize.x * volumeSize.y * sizeof(float)));
+	checkCudaErrors(cudaMalloc((void**)&outputCuda, volumeSize.x * volumeSize.y * sizeof(float)));
 	
-	// 1D Texture
-	float* line = new float[volumeSize.x];
-	memcpy(line, input, volumeSize.x * sizeof(float));
-	ConvertToInterpolationCoefficients(line, volumeSize.x, sizeof(float));
-	cudaPitchedPtr bsplineCoeffs1D = CopyVolumeHostToDevice(line, volumeSize.x, 1, 1);
-	delete[] line;
+	// // 1D Texture
+	// float* line = new float[volumeSize.x];
+	// memcpy(line, input, volumeSize.x * sizeof(float));
+	// ConvertToInterpolationCoefficients(line, volumeSize.x, sizeof(float));
+	// cudaPitchedPtr bsplineCoeffs1D = CopyVolumeHostToDevice(line, volumeSize.x, 1, 1);
+	// delete[] line;
 	
-	cudaChannelFormatDesc channelDescCoeff = cudaCreateChannelDesc<float>();
-	CUDA_SAFE_CALL(cudaMallocArray(&coeffArray1D, &channelDescCoeff, volumeSize.x, 1));
-	CUDA_SAFE_CALL(cudaMemcpyToArray(coeffArray1D, 0, 0, bsplineCoeffs1D.ptr, volumeSize.x * sizeof(float), cudaMemcpyDeviceToDevice));
-	CUDA_SAFE_CALL(cudaFree(bsplineCoeffs1D.ptr));  //they are now in the coeffs texture, we do not need this anymore
-	CUDA_SAFE_CALL(cudaBindTextureToArray(coeffs1D, coeffArray1D, channelDescCoeff));
-	coeffs1D.normalized = false;  //access with unnormalized texture coordinates
-	coeffs1D.filterMode = cudaFilterModeLinear;
+	// cudaChannelFormatDesc channelDescCoeff = cudaCreateChannelDesc<float>();
+	// checkCudaErrors(cudaMallocArray(&coeffArray1D, &channelDescCoeff, volumeSize.x, 1));
+	// checkCudaErrors(cudaMemcpyToArray(coeffArray1D, 0, 0, bsplineCoeffs1D.ptr, volumeSize.x * sizeof(float), cudaMemcpyDeviceToDevice));
+	// checkCudaErrors(cudaFree(bsplineCoeffs1D.ptr));  //they are now in the coeffs texture, we do not need this anymore
+	// checkCudaErrors(cudaBindTextureToArray(coeffs1D, coeffArray1D, channelDescCoeff));
+	// coeffs1D.normalized = false;  //access with unnormalized texture coordinates
+	// coeffs1D.filterMode = cudaFilterModeLinear;
 	
-	// 2D Texture	
-	cudaPitchedPtr bsplineCoeffs2D = CopyVolumeHostToDevice(input, volumeSize.x, volumeSize.y, 1);
-	CubicBSplinePrefilter2DTimer((float*)bsplineCoeffs2D.ptr, (uint)bsplineCoeffs2D.pitch, volumeSize.x, volumeSize.y);
-	CUDA_SAFE_CALL(cudaMallocArray(&coeffArray2D, &channelDescCoeff, volumeSize.x, volumeSize.y));
-	CUDA_SAFE_CALL(cudaMemcpy2DToArray(coeffArray2D, 0, 0, bsplineCoeffs2D.ptr, bsplineCoeffs2D.pitch, volumeSize.x * sizeof(float), volumeSize.y, cudaMemcpyDeviceToDevice));
-	CUDA_SAFE_CALL(cudaFree(bsplineCoeffs2D.ptr));  //they are now in the coeffs texture, we do not need this anymore
-	CUDA_SAFE_CALL(cudaBindTextureToArray(coeffs2D, coeffArray2D, channelDescCoeff));
-	//CUDA_SAFE_CALL(cudaBindTexture2D(NULL, coeffs2D, bsplineCoeffs2D.ptr, volumeSize.x, volumeSize.y, bsplineCoeffs2D.pitch));  //on recent CUDA versions, this call can replace the four previous ones
-	coeffs2D.normalized = false;  //access with unnormalized texture coordinates
-	coeffs2D.filterMode = cudaFilterModeLinear;
+	// // 2D Texture	
+	// cudaPitchedPtr bsplineCoeffs2D = CopyVolumeHostToDevice(input, volumeSize.x, volumeSize.y, 1);
+	// CubicBSplinePrefilter2DTimer((float*)bsplineCoeffs2D.ptr, (uint)bsplineCoeffs2D.pitch, volumeSize.x, volumeSize.y);
+	// checkCudaErrors(cudaMallocArray(&coeffArray2D, &channelDescCoeff, volumeSize.x, volumeSize.y));
+	// checkCudaErrors(cudaMemcpy2DToArray(coeffArray2D, 0, 0, bsplineCoeffs2D.ptr, bsplineCoeffs2D.pitch, volumeSize.x * sizeof(float), volumeSize.y, cudaMemcpyDeviceToDevice));
+	// checkCudaErrors(cudaFree(bsplineCoeffs2D.ptr));  //they are now in the coeffs texture, we do not need this anymore
+	// checkCudaErrors(cudaBindTextureToArray(coeffs2D, coeffArray2D, channelDescCoeff));
+	// //checkCudaErrors(cudaBindTexture2D(NULL, coeffs2D, bsplineCoeffs2D.ptr, volumeSize.x, volumeSize.y, bsplineCoeffs2D.pitch));  //on recent CUDA versions, this call can replace the four previous ones
+	// coeffs2D.normalized = false;  //access with unnormalized texture coordinates
+	// coeffs2D.filterMode = cudaFilterModeLinear;
 	
 	// 3D Texture
 	// calculate the b-spline coefficients
+	convert_to_device_array(input, coeffArray3D, make_cudaExtent(volumeSize.x, volumeSize.y, volumeSize.z));
+
 	cudaPitchedPtr bsplineCoeffs3D = CopyVolumeHostToDevice(input, volumeSize.x, volumeSize.y, volumeSize.z);
 	CubicBSplinePrefilter3DTimer((float*)bsplineCoeffs3D.ptr, (uint)bsplineCoeffs3D.pitch, volumeSize.x, volumeSize.y, volumeSize.z);
 	// create the b-spline coefficients texture
 	cudaExtent volumeExtent = make_cudaExtent(volumeSize.x, volumeSize.y, volumeSize.z);
 	CreateTextureFromVolume(&coeffs3D, &coeffArray3D, bsplineCoeffs3D, volumeExtent, true);
-	CUDA_SAFE_CALL(cudaFree(bsplineCoeffs3D.ptr));  //they are now in the coeffs texture, we do not need this anymore
+	checkCudaErrors(cudaFree(bsplineCoeffs3D.ptr));  //they are now in the coeffs texture, we do not need this anymore
 }
 
 
 extern "C" void freeCuda()
 {
-	CUDA_SAFE_CALL(cudaFree(outputCuda));
-	CUDA_SAFE_CALL(cudaFreeArray(coeffArray1D));
-	CUDA_SAFE_CALL(cudaFreeArray(coeffArray2D));
-	CUDA_SAFE_CALL(cudaFreeArray(coeffArray3D));
+	checkCudaErrors(cudaFree(outputCuda));
+	checkCudaErrors(cudaFreeArray(coeffArray1D));
+	checkCudaErrors(cudaFreeArray(coeffArray2D));
+	checkCudaErrors(cudaFreeArray(coeffArray3D));
 	delete[] input;
 	
 	outputCuda = NULL;

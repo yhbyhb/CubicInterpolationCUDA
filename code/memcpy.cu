@@ -32,7 +32,7 @@ policies, either expressed or implied.
 
 When using this code in a scientific project, please cite one or all of the
 following papers:
-*  Daniel Ruijters and Philippe Thévenaz,
+*  Daniel Ruijters and Philippe Thï¿½venaz,
    GPU Prefilter for Accurate Cubic B-Spline Interpolation, 
    The Computer Journal, vol. 55, no. 1, pp. 15-20, January 2012.
    http://dannyruijters.nl/docs/cudaPrefilter3.pdf
@@ -45,19 +45,19 @@ following papers:
 #define _MEMCPY_CUDA_H_
 
 #include <stdio.h>
-#include <cutil.h>
+#include <helper_cuda.h>
 #include "internal/math_func.cu"
 
 //--------------------------------------------------------------------------
 // Declare the typecast CUDA kernels
 //--------------------------------------------------------------------------
-template<class T> __device__ float Multiplier()	{ return 1.0f; }
+template<typename T> __device__ float Multiplier()	{ return 1.0f; }
 template<> __device__ float Multiplier<uchar>()	{ return 255.0f; }
 template<> __device__ float Multiplier<schar>()	{ return 127.0f; }
 template<> __device__ float Multiplier<ushort>(){ return 65535.0f; }
 template<> __device__ float Multiplier<short>()	{ return 32767.0f; }
 
-template<class T> __global__ void CopyCast(uchar* destination, const T* source, uint pitch, uint width)
+template<typename T> __global__ void CopyCast(uchar* destination, const T* source, uint pitch, uint width)
 {
 	uint2 index = make_uint2(
 		__umul24(blockIdx.x, blockDim.x) + threadIdx.x,
@@ -67,7 +67,7 @@ template<class T> __global__ void CopyCast(uchar* destination, const T* source, 
 	*dest = (1.0f/Multiplier<T>()) * (float)(source[index.y * width + index.x]);
 }
 
-template<class T> __global__ void CopyCastBack(T* destination, const uchar* source, uint pitch, uint width)
+template<typename T> __global__ void CopyCastBack(T* destination, const uchar* source, uint pitch, uint width)
 {
 	uint2 index = make_uint2(
 		__umul24(blockIdx.x, blockDim.x) + threadIdx.x,
@@ -90,17 +90,17 @@ template<class T> __global__ void CopyCastBack(T* destination, const uchar* sour
 //! @param width   volume width in number of voxels
 //! @param height  volume height in number of voxels
 //! @param depth   volume depth in number of voxels
-template<class T> extern cudaPitchedPtr CastVolumeHostToDevice(const T* host, uint width, uint height, uint depth)
+template<typename T> extern cudaPitchedPtr CastVolumeHostToDevice(const T* host, uint width, uint height, uint depth)
 {
 	cudaPitchedPtr device = {0};
 	const cudaExtent extent = make_cudaExtent(width * sizeof(float), height, depth);
-	CUDA_SAFE_CALL(cudaMalloc3D(&device, extent));
+	checkCudaErrors(cudaMalloc3D(&device, extent));
 	const size_t pitchedBytesPerSlice = device.pitch * device.ysize;
 	
 	T* temp = 0;
 	const uint voxelsPerSlice = width * height;
 	const size_t nrOfBytesTemp = voxelsPerSlice * sizeof(T);
-	CUDA_SAFE_CALL(cudaMalloc((void**)&temp, nrOfBytesTemp));
+	checkCudaErrors(cudaMalloc((void**)&temp, nrOfBytesTemp));
 
 	uint dimX = min(PowTwoDivider(width), 64);
 	dim3 dimBlock(dimX, min(PowTwoDivider(height), 512 / dimX));
@@ -110,14 +110,14 @@ template<class T> extern cudaPitchedPtr CastVolumeHostToDevice(const T* host, ui
 	
 	for (uint slice = 0; slice < depth; slice++)
 	{
-		CUDA_SAFE_CALL(cudaMemcpy(temp, host + offsetHost, nrOfBytesTemp, cudaMemcpyHostToDevice));
+		checkCudaErrors(cudaMemcpy(temp, host + offsetHost, nrOfBytesTemp, cudaMemcpyHostToDevice));
 		CopyCast<T><<<dimGrid, dimBlock>>>((uchar*)device.ptr + offsetDevice, temp, (uint)device.pitch, width);
 		CUT_CHECK_ERROR("Cast kernel failed");
 		offsetHost += voxelsPerSlice;
 		offsetDevice += pitchedBytesPerSlice;
 	}
 
-	CUDA_SAFE_CALL(cudaFree(temp));  //free the temp GPU volume
+	checkCudaErrors(cudaFree(temp));  //free the temp GPU volume
 	return device;
 }
 
@@ -129,12 +129,12 @@ template<class T> extern cudaPitchedPtr CastVolumeHostToDevice(const T* host, ui
 //! @param height  volume height in number of voxels
 //! @param depth   volume depth in number of voxels
 //! @note The \host CPU memory should be pre-allocated
-template<class T> extern void CastVolumeDeviceToHost(T* host, const cudaPitchedPtr device, uint width, uint height, uint depth)
+template<typename T> extern void CastVolumeDeviceToHost(T* host, const cudaPitchedPtr device, uint width, uint height, uint depth)
 {
 	T* temp = 0;
 	const uint voxelsPerSlice = width * height;
 	const size_t nrOfBytesTemp = voxelsPerSlice * sizeof(T);
-	CUDA_SAFE_CALL(cudaMalloc((void**)&temp, nrOfBytesTemp));
+	checkCudaErrors(cudaMalloc((void**)&temp, nrOfBytesTemp));
 
 	uint dimX = min(PowTwoDivider(width), 64);
 	dim3 dimBlock(dimX, min(PowTwoDivider(height), 512 / dimX));
@@ -147,12 +147,12 @@ template<class T> extern void CastVolumeDeviceToHost(T* host, const cudaPitchedP
 	{
 		CopyCastBack<T><<<dimGrid, dimBlock>>>(temp, (const uchar*)device.ptr + offsetDevice, (uint)device.pitch, width);
 		CUT_CHECK_ERROR("Cast kernel failed");
-		CUDA_SAFE_CALL(cudaMemcpy(host + offsetHost, temp, nrOfBytesTemp, cudaMemcpyDeviceToHost));
+		checkCudaErrors(cudaMemcpy(host + offsetHost, temp, nrOfBytesTemp, cudaMemcpyDeviceToHost));
 		offsetHost += voxelsPerSlice;
 		offsetDevice += pitchedBytesPerSlice;
 	}
 
-	CUDA_SAFE_CALL(cudaFree(temp));  //free the temp GPU volume
+	checkCudaErrors(cudaFree(temp));  //free the temp GPU volume
 }
 
 //--------------------------------------------------------------------------
@@ -170,13 +170,13 @@ cudaPitchedPtr CopyVolumeHostToDevice(const float* host, uint width, uint height
 {
 	cudaPitchedPtr device = {0};
 	const cudaExtent extent = make_cudaExtent(width * sizeof(float), height, depth);
-	CUDA_SAFE_CALL(cudaMalloc3D(&device, extent));
+	checkCudaErrors(cudaMalloc3D(&device, extent));
 	cudaMemcpy3DParms p = {0};
 	p.srcPtr = make_cudaPitchedPtr((void*)host, width * sizeof(float), width, height);
 	p.dstPtr = device;
 	p.extent = extent;
 	p.kind = cudaMemcpyHostToDevice;
-	CUDA_SAFE_CALL(cudaMemcpy3D(&p));
+	checkCudaErrors(cudaMemcpy3D(&p));
 	return device;
 }
 
@@ -196,8 +196,8 @@ void CopyVolumeDeviceToHost(float* host, const cudaPitchedPtr device, uint width
 	p.dstPtr = make_cudaPitchedPtr((void*)host, width * sizeof(float), width, height);
 	p.extent = extent;
 	p.kind = cudaMemcpyDeviceToHost;
-	CUDA_SAFE_CALL(cudaMemcpy3D(&p));
-	CUDA_SAFE_CALL(cudaFree(device.ptr));  //free the GPU volume
+	checkCudaErrors(cudaMemcpy3D(&p));
+	checkCudaErrors(cudaFree(device.ptr));  //free the GPU volume
 }
 
 //! Copy a voxel volume from a pitched pointer to a texture
@@ -207,21 +207,21 @@ void CopyVolumeDeviceToHost(float* host, const cudaPitchedPtr device, uint width
 //! @param extent   [input]   size (width, height, depth) of the voxel volume
 //! @param onDevice [input]   boolean to indicate whether the voxel volume resides in GPU (true) or CPU (false) memory
 //! @note When the texArray is not yet allocated, this function will allocate it
-template<class T, enum cudaTextureReadMode mode> void CreateTextureFromVolume(
+template<typename T, enum cudaTextureReadMode mode> void CreateTextureFromVolume(
 	texture<T, 3, mode>* tex, cudaArray** texArray,
 	const cudaPitchedPtr volume, cudaExtent extent, bool onDevice)
 {
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<T>();
-	if (*texArray == 0) CUDA_SAFE_CALL(cudaMalloc3DArray(texArray, &channelDesc, extent));
+	if (*texArray == 0) checkCudaErrors(cudaMalloc3DArray(texArray, &channelDesc, extent));
 	// copy data to 3D array
 	cudaMemcpy3DParms p = {0};
 	p.extent   = extent;
 	p.srcPtr   = volume;
 	p.dstArray = *texArray;
 	p.kind     = onDevice ? cudaMemcpyDeviceToDevice : cudaMemcpyHostToDevice;
-	CUDA_SAFE_CALL(cudaMemcpy3D(&p));
+	checkCudaErrors(cudaMemcpy3D(&p));
 	// bind array to 3D texture
-	CUDA_SAFE_CALL(cudaBindTextureToArray(*tex, *texArray, channelDesc));
+	checkCudaErrors(cudaBindTextureToArray(*tex, *texArray, channelDesc));
 	tex->normalized = false;  //access with absolute texture coordinates
 	tex->filterMode = cudaFilterModeLinear;
 }
@@ -233,7 +233,7 @@ template<class T, enum cudaTextureReadMode mode> void CreateTextureFromVolume(
 //! @param extent   [input]   size (width, height, depth) of the voxel volume
 //! @param onDevice [input]   boolean to indicate whether the voxel volume resides in GPU (true) or CPU (false) memory
 //! @note When the texArray is not yet allocated, this function will allocate it
-template<class T, enum cudaTextureReadMode mode> void CreateTextureFromVolume(
+template<typename T, enum cudaTextureReadMode mode> void CreateTextureFromVolume(
 	texture<T, 3, mode>* tex, cudaArray** texArray,
 	const T* volume, cudaExtent extent, bool onDevice)
 {
